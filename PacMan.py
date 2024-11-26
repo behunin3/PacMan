@@ -3,20 +3,30 @@ import pygame
 import time
 import ale_py
 import shimmy
-print(ale_py.__version__, shimmy.__version__)
+from enum import Enum
+import matplotlib.pyplot as plt
+from gymnasium.wrappers import GrayscaleObservation
+from gymnasium.wrappers import ResizeObservation
+# print(ale_py.__version__, shimmy.__version__)
+
 # Initialize the Ms. Pac-Man environment
 env = gym.make("ALE/MsPacman-v5", render_mode="human")
+env = GrayscaleObservation(env, keep_dim=True) # convert to grayscale to reduce information (210, 160, 3) ==> (210,160,1)
+env = ResizeObservation(env, shape=(84,84)) # reduce obs size to reduce information
 
-# Reset the environment to start a new game
 obs, info = env.reset()
+epochs = 1000
 
-# Run the game for a set number of steps
-for _ in range(1000):
-    # Take a random action
+for i in range(epochs):
     action = env.action_space.sample()
     
-    # Step through the environment with the selected action
     obs, reward, terminated, truncated, info = env.step(action)
+    if i % 10 == 0:
+        print('obs shape: ', obs.shape)
+        print('reward: ', reward)
+        print('terminated: ', terminated)
+        print('truncated: ', truncated)
+        print('info: ', info)
     
     # End the game if terminated or truncated
     if terminated or truncated:
@@ -25,5 +35,4 @@ for _ in range(1000):
     # Add a slight delay to control the speed of rendering
     time.sleep(0.02)
 
-# Close the environment when done
 env.close()
