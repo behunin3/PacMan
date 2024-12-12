@@ -3,7 +3,6 @@ import pygame
 import time
 import ale_py
 import shimmy
-<<<<<<< HEAD
 print(ale_py.__version__, shimmy.__version__)
 
 import torch
@@ -180,32 +179,6 @@ def main():
     
 #     # Step through the environment with the selected action
 #     obs, reward, terminated, truncated, info = env.step(action)
-=======
-from enum import Enum
-import matplotlib.pyplot as plt
-from gymnasium.wrappers import GrayscaleObservation
-from gymnasium.wrappers import ResizeObservation
-# print(ale_py.__version__, shimmy.__version__)
-
-# Initialize the Ms. Pac-Man environment
-env = gym.make("ALE/MsPacman-v5", render_mode="human")
-env = GrayscaleObservation(env, keep_dim=True) # convert to grayscale to reduce information (210, 160, 3) ==> (210,160,1)
-env = ResizeObservation(env, shape=(84,84)) # reduce obs size to reduce information
-
-obs, info = env.reset()
-epochs = 1000
-
-for i in range(epochs):
-    action = env.action_space.sample()
-    
-    obs, reward, terminated, truncated, info = env.step(action)
-    if i % 10 == 0:
-        print('obs shape: ', obs.shape)
-        print('reward: ', reward)
-        print('terminated: ', terminated)
-        print('truncated: ', truncated)
-        print('info: ', info)
->>>>>>> 91ea39930ce99d857211c98e33cab75db29b737f
     
 #     # End the game if terminated or truncated
 #     if terminated or truncated:
@@ -214,11 +187,7 @@ for i in range(epochs):
 #     # Add a slight delay to control the speed of rendering
 #     time.sleep(0.02)
 
-<<<<<<< HEAD
 # # Close the environment when done
 # env.close()
 results_dqn = main()
 show_video()
-=======
-env.close()
->>>>>>> 91ea39930ce99d857211c98e33cab75db29b737f

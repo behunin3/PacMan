@@ -3,7 +3,7 @@ import os
 
 from Cell import Cell
 
-maze = []
+# maze = []
 def read_maze(file_path):
     maze = []
     with open(file_path, 'r') as file:
@@ -13,7 +13,15 @@ def read_maze(file_path):
     return maze
 
 file_path = "map.txt"
-maze_2d_list = read_maze(file_path)
+maze = read_maze(file_path)
 
-for row in maze_2d_list:
-    print([element.name for element in row])
+# for row in maze:
+#     print([element.name for element in row])
+pacman_start = [18,14]
+maze[18][14] = Cell.PACMAN
+
+
+for i in range(len(maze)):
+    for j in range(len(maze[0])):
+        if maze[i][j] == Cell.PACMAN:
+            print('Pacman at: ', i, j)
