@@ -7,6 +7,17 @@ from Cell import Cell
 from tqdm import tqdm
 from enum import Enum
 import matplotlib.pyplot as plt
+import pygame
+import os
+
+GRAY = (224,224,224)
+DARK_GRAY = (100,100,100)
+YELLOW = (255,255,0)
+GREEN = (0,255,0)
+DARK_GREEN = (0,153,0)
+PURPLE = (153,51,255)
+DARK_PINK = (102,0,51)
+WHITE = (255,255,255)
 
 class Direction(Enum):
     LEFT = 0
@@ -32,7 +43,13 @@ class Agent():
         self.lr = 1e-3
         self.optim = torch.optim.Adam(self.network.parameters(), lr=self.lr)
         self.direction = Direction.LEFT
-        self.maze = self.read_maze('Pacman/map.txt')
+        # print(os.listdir(os.getcwd()))
+        self.maze = self.read_maze('map.txt')
+        self.maze[self.row][self.col] = Cell.PACMAN
+        self.display = pygame.display.set_mode((580,400))
+        pygame.display.set_caption("Pacman AI")
+        self.display.fill(GRAY)
+        pygame.display.flip()
         # count = 0
         # for i in range(len(self.maze)):
         #     for j in range(len(self.maze[0])):
@@ -71,6 +88,66 @@ class Agent():
         epsilon *= epsilon_decay
         epsilon = max(epsilon, 0.01)
         return action, epsilon
+
+    def draw_maze(self):
+        block_size = 20
+
+        while True:
+            self.display.fill(GRAY)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    quit()
+            for row in range(len(self.maze)):
+                for col in range(len(self.maze[0])):
+                    cell = self.maze[row][col]    
+                    rect = pygame.Rect(col * block_size, row*block_size, block_size, block_size)
+                    if cell == Cell.WALL:
+                        pygame.draw.rect(self.display, DARK_GRAY, rect)
+                    elif cell == Cell.GATE:
+                        pygame.draw.rect(self.display, PURPLE, rect)
+                    elif cell == Cell.BALL:
+                        pygame.draw.rect(self.display, GREEN, rect)
+                    elif cell == Cell.POWERBALL:
+                        pygame.draw.rect(self.display, DARK_GREEN, rect)
+                    elif cell == Cell.PACMAN:
+                        pygame.draw.rect(self.display, YELLOW, rect)
+                    elif cell == Cell.GHOST:
+                        pygame.draw.rect(self.display, DARK_PINK, rect)
+                    else:
+                        pygame.draw.rect(self.display, WHITE, rect) 
+            pygame.display.flip()
+
+        '''
+        def print_grid(self):
+        for row in range(self.num_rows):
+            for col in range(self.num_cols):
+                cell = self.grid[row][col]
+                rect = pygame.Rect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE)
+
+                if not cell.isVisible:
+                    if cell.flagged:
+                        pygame.draw.rect(self.display, LIGHT_PINK, rect)
+                        # flag_image = pygame.image.load('flag.png')
+                        # flag_rect = flag_image.get_rect(center=rect.center)
+                        # self.display.blit(flag_image, flag_rect)
+                    else:
+                        pygame.draw.rect(self.display, UNKNOWN_COLOR, rect)
+                elif cell.celltype == CellType.BOMB:
+                    pygame.draw.rect(self.display, BOMB_COLOR, rect)
+                else:
+                    pygame.draw.rect(self.display, GRID_COLOR, rect)
+                    if cell.value > 0:
+                        text = font.render(str(cell.value), True, NUMBER_COLORS[cell.value])
+                        text_rect = text.get_rect(center=rect.center)
+                        self.display.blit(text, text_rect)
+
+                pygame.draw.rect(self.display, GRID_LINE_COLOR, rect, 1)
+        
+        
+        
+        
+        '''
     
     def reset(self):
         self.maze = self.read_maze('Pacman/map.txt')
@@ -92,6 +169,8 @@ class Agent():
         else:
             return [self.maze[self.row][self.col+1], self.maze[self.row+1][self.col], self.maze[self.row][self.col-1]] # right, down, left
 
+    def show_game(self):
+        block_size = 20
 
 
     def step(self, action, direction):
@@ -194,6 +273,7 @@ class Agent():
         global_step = 0
         loop = tqdm(total=epochs, position=0, leave=False)
         for epoch in range(epochs):
+            self.draw_maze()
             state = self.reset()
             done = False
             cum_reward = 0
@@ -220,6 +300,7 @@ class Agent():
         return results
         
 a = Agent()
+# a.draw_maze()
 results = a.train()
 plt.plot(results)
 plt.title("Cumulative Reward vs Time gen 0")
