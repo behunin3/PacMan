@@ -30,6 +30,8 @@ from IPython import display as ipythondisplay
 
 # Reset the environment to start a new game
 # obs, info = env.reset()
+from QNetwork import QNetwork
+
 random.seed(time.time())
 
 
@@ -96,19 +98,7 @@ def learn_dqn(batch, optim, q_network, target_network, gamma, global_step, targe
     if global_step % target_update == 0:
         target_network.load_state_dict(q_network.state_dict())
 
-class QNetwork(nn.module):
-    def __init__(self, state_size, action_size):
-        super().__init__()
-        hidden_size = 8
-        self.net = nn.Sequential(nn.Linear(state_size, hidden_size),
-                                nn.ReLU(),
-                                nn.Linear(hidden_size, hidden_size),
-                                nn.ReLU(),
-                                nn.Linear(hidden_size, hidden_size),
-                                nn.ReLU(),
-                                nn.Linear(hidden_size, action_size))
-    def forward(self,x):
-        return self.net(x)
+
 
 def main():
     lr = 1e-3
