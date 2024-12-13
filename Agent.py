@@ -117,37 +117,6 @@ class Agent():
                     else:
                         pygame.draw.rect(self.display, WHITE, rect) 
             pygame.display.flip()
-
-        '''
-        def print_grid(self):
-        for row in range(self.num_rows):
-            for col in range(self.num_cols):
-                cell = self.grid[row][col]
-                rect = pygame.Rect(col * CELL_SIZE, row * CELL_SIZE, CELL_SIZE, CELL_SIZE)
-
-                if not cell.isVisible:
-                    if cell.flagged:
-                        pygame.draw.rect(self.display, LIGHT_PINK, rect)
-                        # flag_image = pygame.image.load('flag.png')
-                        # flag_rect = flag_image.get_rect(center=rect.center)
-                        # self.display.blit(flag_image, flag_rect)
-                    else:
-                        pygame.draw.rect(self.display, UNKNOWN_COLOR, rect)
-                elif cell.celltype == CellType.BOMB:
-                    pygame.draw.rect(self.display, BOMB_COLOR, rect)
-                else:
-                    pygame.draw.rect(self.display, GRID_COLOR, rect)
-                    if cell.value > 0:
-                        text = font.render(str(cell.value), True, NUMBER_COLORS[cell.value])
-                        text_rect = text.get_rect(center=rect.center)
-                        self.display.blit(text, text_rect)
-
-                pygame.draw.rect(self.display, GRID_LINE_COLOR, rect, 1)
-        
-        
-        
-        
-        '''
     
     def reset(self):
         self.maze = self.read_maze('Pacman/map.txt')
@@ -168,9 +137,6 @@ class Agent():
             return [self.maze[self.row-1][self.col], self.maze[self.row][self.col+1], self.maze[self.row+1][self.col]] # up, right, down
         else:
             return [self.maze[self.row][self.col+1], self.maze[self.row+1][self.col], self.maze[self.row][self.col-1]] # right, down, left
-
-    def show_game(self):
-        block_size = 20
 
 
     def step(self, action, direction):
@@ -273,7 +239,7 @@ class Agent():
         global_step = 0
         loop = tqdm(total=epochs, position=0, leave=False)
         for epoch in range(epochs):
-            self.draw_maze()
+            # self.draw_maze()
             state = self.reset()
             done = False
             cum_reward = 0
@@ -296,6 +262,8 @@ class Agent():
                 loop.update(1)
                 # print('epoch: ', epoch, 'cum_reward:', cum_reward)
                 loop.set_description('Episodes: {} Reward: {}'.format(epoch, cum_reward))
+                self.display.fill(GRAY)
+                pygame.display.flip()
 
         return results
         
