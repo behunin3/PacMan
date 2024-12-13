@@ -6,6 +6,7 @@ from QNetwork import QNetwork
 from Cell import Cell
 from tqdm import tqdm
 from enum import Enum
+import matplotlib.pyplot as plt
 
 class Direction(Enum):
     LEFT = 0
@@ -20,10 +21,10 @@ class Agent():
         self.col = 14
         self.lives = 3
         action_space = 3 # left, straight, right
-        state_space = 11 # my position, ghost positions, what cells are around me
+        state_space = 6 # my row, my col, cell_left, cell_straight, cell_right, direction
         self.network = QNetwork(state_space, action_space)
         self.target_network = QNetwork(state_space, action_space)
-        self.target_network.load_state_dict(self.q_network.state_dict())
+        self.target_network.load_state_dict(self.network.state_dict())
         self.epsilon = 1
         self.epsilon_decay = .9999
         self.target_update = 1000
@@ -31,7 +32,13 @@ class Agent():
         self.lr = 1e-3
         self.optim = torch.optim.Adam(self.network.parameters(), lr=self.lr)
         self.direction = Direction.LEFT
-        self.maze = self.read_maze('map.txt')
+        self.maze = self.read_maze('Pacman/map.txt')
+        # count = 0
+        # for i in range(len(self.maze)):
+        #     for j in range(len(self.maze[0])):
+        #         if self.maze[i][j] == Cell.BALL or self.maze[i][j] == Cell.POWERBALL:
+        #             count += 1
+        # print('count: ', count)
 
     def read_maze(self, file_path):
         maze = []
@@ -44,22 +51,51 @@ class Agent():
     def get_action(self, network, state, epsilon, epsilon_decay):
         if random.random() < epsilon:
             action = torch.randint(0,3, (1,)).item()
+            neighbors = self.cells_around_me(self.direction)
+            if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
+                action = (action + 1) % 3
+            if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
+                action = (action + 1) % 3
         else:
-            state = torch.tensor(state)
-            state = state.unsqueeze(0)
+            tstate = []
+            for item in state:
+                if isinstance(item, Cell) or isinstance(item, Direction):
+                    tstate.append(float(item.value))
+                else:
+                    tstate.append(float(item))
+            state = torch.tensor(tstate)
+            # state = state.unsqueeze(0)
             with torch.no_grad():
                 q_values = network(state)
-            
-            action = torch.argmax(q_values, dim=1).item()
+            action = torch.argmax(q_values, dim=0).item()
         epsilon *= epsilon_decay
         epsilon = max(epsilon, 0.01)
         return action, epsilon
     
     def reset(self):
-        pass
+        self.maze = self.read_maze('Pacman/map.txt')
+        self.row = 18
+        self.col = 14
+        self.lives = 3
+        self.direction = Direction.LEFT
+        left, straight, right = self.cells_around_me(self.direction)
+        state = [self.row, self.col, left, straight, right, self.direction]
+        return state
+
+    def cells_around_me(self, direction):
+        if direction == Direction.LEFT:
+            return [self.maze[self.row+1][self.col], self.maze[self.row][self.col-1], self.maze[self.row-1][self.col]] # down, left, up
+        elif direction == Direction.UP:
+            return [self.maze[self.row][self.col-1], self.maze[self.row-1][self.col], self.maze[self.row][self.col+1]] # left, up, right
+        elif direction == Direction.RIGHT:
+            return [self.maze[self.row-1][self.col], self.maze[self.row][self.col+1], self.maze[self.row+1][self.col]] # up, right, down
+        else:
+            return [self.maze[self.row][self.col+1], self.maze[self.row+1][self.col], self.maze[self.row][self.col-1]] # right, down, left
+
+
 
     def step(self, action, direction):
-        actual = Direction.LEFT
+        # actual = Direction.LEFT
         reward = 0
         if direction == Direction.LEFT:
             if action == 0:
@@ -102,26 +138,32 @@ class Agent():
         else:
             r = self.row + 1
             c = self.col
-        
+
+        terminated = False
         if self.maze[r][c] != Cell.GATE and self.maze[r][c] != Cell.WALL:
-            if self.maze[r][c] == Cell.BALL or self.maze[r][c] == Cell.POWERBALL:
+            if self.maze[r][c] == Cell.GHOST:
+                terminated = True
+            elif self.maze[r][c] == Cell.BALL or self.maze[r][c] == Cell.POWERBALL:
                 reward += 1
             self.maze[r][c] = Cell.PACMAN
             self.maze[self.row][self.col] = Cell.BLANK
             self.row = r
             self.col = c
+            self.direction = actual
 
-        next_state = [] # TODO I HAVE NO IDEA WHAT THIS SHOULD LOOK LIKE
+        left, straight, right = self.cells_around_me(self.direction)
+        next_state = [self.row, self.col, left, straight, right, self.direction] 
         # return next_state, reward, terminated, truncated
+        return next_state, reward, terminated, False
 
     def prepare_batch(self, memory, batch_size):
         batches = random.choices(memory, k=batch_size)
         state, action, next_state, reward, done = zip(*batches)
-        state = [s for s in state]
+        state = [[float(s.value) if isinstance(s, Enum) else float(s) for s in row] for row in state]
         state = torch.tensor(state)
         action = [a for a in action]
         action = torch.tensor(action)
-        next_state = [s for s in next_state]
+        next_state = [[float(s.value) if isinstance(s, Enum) else float(s) for s in row] for row in next_state]
         next_state = torch.tensor(next_state)
         reward = [r for r in reward]
         reward = torch.tensor(reward)
@@ -143,7 +185,7 @@ class Agent():
     
     def train(self):
         epochs = 500
-        start_training = 1000
+        start_training = 500
         batch_size = 32
         learn_frequency = 2
 
@@ -155,13 +197,14 @@ class Agent():
             state = self.reset()
             done = False
             cum_reward = 0
+            start_time = time.time()
 
-            while not done and cum_reward < 200:
-                action, epsilon = self.get_action(self.network, state, self.epsilon, self.epsilon_decay)
+            while not done and cum_reward < 286 and time.time() - start_time < 1: # there are 278 balls and 8 powerballs
+                action, self.epsilon = self.get_action(self.network, state, self.epsilon, self.epsilon_decay)
                 next_state, reward, terminated, truncated = self.step(action, self.direction)
-                done = terminated, truncated
+                done = terminated or truncated
                 memory.append((state, action, next_state, reward, done))
-
+                # print(reward, cum_reward)
                 cum_reward += reward
                 global_step += 1
                 state = next_state
@@ -171,6 +214,15 @@ class Agent():
 
                 results.append(cum_reward)
                 loop.update(1)
-                loop.set_description('Episodes: {} Reward: {}').format(epoch, cum_reward)
+                # print('epoch: ', epoch, 'cum_reward:', cum_reward)
+                loop.set_description('Episodes: {} Reward: {}'.format(epoch, cum_reward))
 
-            return results
+        return results
+        
+a = Agent()
+results = a.train()
+plt.plot(results)
+plt.title("Cumulative Reward vs Time gen 0")
+plt.xlabel('Iteration')
+plt.ylabel('Reward')
+plt.show()
