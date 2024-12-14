@@ -42,7 +42,7 @@ class Agent():
         self.gamma = 0.99
         self.lr = 1e-3
         self.optim = torch.optim.Adam(self.network.parameters(), lr=self.lr)
-        self.direction = Direction.LEFT
+        self.direction = Direction.LEFT if random.random() <= 0.5 else Direction.RIGHT
         # print(os.listdir(os.getcwd()))
         self.maze = self.read_maze('map.txt')
         self.maze[self.row][self.col] = Cell.PACMAN
@@ -119,11 +119,11 @@ class Agent():
             pygame.display.flip()
     
     def reset(self):
-        self.maze = self.read_maze('Pacman/map.txt')
+        self.maze = self.read_maze('map.txt')
         self.row = 18
         self.col = 14
         self.lives = 3
-        self.direction = Direction.LEFT
+        self.direction = Direction.LEFT if random.random() <= 0.5 else Direction.RIGHT
         left, straight, right = self.cells_around_me(self.direction)
         state = [self.row, self.col, left, straight, right, self.direction]
         return state
@@ -229,8 +229,10 @@ class Agent():
             target_network.load_state_dict(q_network.state_dict())
     
     def train(self):
+        block_size = 20
+        
         epochs = 500
-        start_training = 500
+        start_training = 100
         batch_size = 32
         learn_frequency = 2
 
@@ -244,8 +246,33 @@ class Agent():
             done = False
             cum_reward = 0
             start_time = time.time()
+            self.display.fill(DARK_GRAY)
 
             while not done and cum_reward < 286 and time.time() - start_time < 1: # there are 278 balls and 8 powerballs
+                
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        pygame.quit()
+                        quit()
+                for row in range(len(self.maze)):
+                    for col in range(len(self.maze[0])):
+                        cell = self.maze[row][col]    
+                        rect = pygame.Rect(col * block_size, row*block_size, block_size, block_size)
+                        if cell == Cell.WALL:
+                            pygame.draw.rect(self.display, DARK_GRAY, rect)
+                        elif cell == Cell.GATE:
+                            pygame.draw.rect(self.display, PURPLE, rect)
+                        elif cell == Cell.BALL:
+                            pygame.draw.rect(self.display, GREEN, rect)
+                        elif cell == Cell.POWERBALL:
+                            pygame.draw.rect(self.display, DARK_GREEN, rect)
+                        elif cell == Cell.PACMAN:
+                            pygame.draw.rect(self.display, YELLOW, rect)
+                        elif cell == Cell.GHOST:
+                            pygame.draw.rect(self.display, DARK_PINK, rect)
+                        else:
+                            pygame.draw.rect(self.display, WHITE, rect) 
+                pygame.display.flip()
                 action, self.epsilon = self.get_action(self.network, state, self.epsilon, self.epsilon_decay)
                 next_state, reward, terminated, truncated = self.step(action, self.direction)
                 done = terminated or truncated
@@ -262,7 +289,7 @@ class Agent():
                 loop.update(1)
                 # print('epoch: ', epoch, 'cum_reward:', cum_reward)
                 loop.set_description('Episodes: {} Reward: {}'.format(epoch, cum_reward))
-                self.display.fill(GRAY)
+                # self.display.fill(GRAY)
                 pygame.display.flip()
 
         return results
@@ -270,6 +297,7 @@ class Agent():
 a = Agent()
 # a.draw_maze()
 results = a.train()
+# print(type(results))
 plt.plot(results)
 plt.title("Cumulative Reward vs Time gen 0")
 plt.xlabel('Iteration')
