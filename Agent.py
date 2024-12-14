@@ -37,7 +37,7 @@ class Agent():
         self.target_network = QNetwork(state_space, action_space)
         self.target_network.load_state_dict(self.network.state_dict())
         self.epsilon = 1
-        self.epsilon_decay = .9999
+        self.epsilon_decay = .999
         self.target_update = 1000
         self.gamma = 0.99
         self.lr = 1e-3
@@ -66,13 +66,9 @@ class Agent():
         return maze
 
     def get_action(self, network, state, epsilon, epsilon_decay):
+        neighbors = self.cells_around_me(self.direction)
         if random.random() < epsilon:
             action = torch.randint(0,3, (1,)).item()
-            neighbors = self.cells_around_me(self.direction)
-            if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
-                action = (action + 1) % 3
-            if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
-                action = (action + 1) % 3
         else:
             tstate = []
             for item in state:
@@ -85,6 +81,10 @@ class Agent():
             with torch.no_grad():
                 q_values = network(state)
             action = torch.argmax(q_values, dim=0).item()
+        if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
+            action = (action + 1) % 3
+        if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
+            action = (action + 1) % 3
         epsilon *= epsilon_decay
         epsilon = max(epsilon, 0.01)
         return action, epsilon
@@ -232,12 +232,13 @@ class Agent():
         block_size = 20
         
         epochs = 500
-        start_training = 100
+        start_training = 200
         batch_size = 32
         learn_frequency = 2
 
         memory = []
         results = []
+        num_iters = []
         global_step = 0
         loop = tqdm(total=epochs, position=0, leave=False)
         for epoch in range(epochs):
@@ -247,9 +248,9 @@ class Agent():
             cum_reward = 0
             start_time = time.time()
             self.display.fill(DARK_GRAY)
-
+            epoch_iters = 0
             while not done and cum_reward < 286 and time.time() - start_time < 1: # there are 278 balls and 8 powerballs
-                
+                epoch_iters += 1
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT:
                         pygame.quit()
@@ -291,15 +292,20 @@ class Agent():
                 loop.set_description('Episodes: {} Reward: {}'.format(epoch, cum_reward))
                 # self.display.fill(GRAY)
                 pygame.display.flip()
-
-        return results
+            num_iters.append(epoch_iters)
+        return results, num_iters
         
 a = Agent()
 # a.draw_maze()
-results = a.train()
+results, iters = a.train()
 # print(type(results))
 plt.plot(results)
 plt.title("Cumulative Reward vs Time gen 0")
 plt.xlabel('Iteration')
 plt.ylabel('Reward')
+plt.show()
+plt.plot(iters)
+plt.title("Num Iters per Epoch")
+plt.xlabel('epoch')
+plt.ylabel('Iters')
 plt.show()
