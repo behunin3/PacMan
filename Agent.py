@@ -9,6 +9,7 @@ from enum import Enum
 import matplotlib.pyplot as plt
 import pygame
 import os
+import numpy as np
 
 GRAY = (224,224,224)
 DARK_GRAY = (100,100,100)
@@ -32,12 +33,12 @@ class Agent():
         self.col = 14
         self.lives = 3
         action_space = 3 # left, straight, right
-        state_space = 6 # my row, my col, cell_left, cell_straight, cell_right, direction
+        state_space = 27 # my row, my col, cell_left, cell_straight, cell_right, direction
         self.network = QNetwork(state_space, action_space)
         self.target_network = QNetwork(state_space, action_space)
         self.target_network.load_state_dict(self.network.state_dict())
         self.epsilon = 1
-        self.epsilon_decay = .999
+        self.epsilon_decay = .9999
         self.target_update = 1000
         self.gamma = 0.99
         self.lr = 1e-3
@@ -48,14 +49,64 @@ class Agent():
         self.maze[self.row][self.col] = Cell.PACMAN
         self.display = pygame.display.set_mode((580,400))
         pygame.display.set_caption("Pacman AI")
-        self.display.fill(GRAY)
-        pygame.display.flip()
+        # self.display.fill(GRAY)
+        # pygame.display.flip()
         # count = 0
         # for i in range(len(self.maze)):
         #     for j in range(len(self.maze[0])):
         #         if self.maze[i][j] == Cell.BALL or self.maze[i][j] == Cell.POWERBALL:
         #             count += 1
         # print('count: ', count)
+
+    def get_channels(self):
+        rows, cols = len(self.maze), len(self.maze[0])
+
+        wall_channel = np.zeros((rows, cols), dtype=int)
+        ball_channel = np.zeros((rows, cols), dtype=int)
+        powerball_channel = np.zeros((rows, cols), dtype=int)
+        ghost_channel = np.zeros((rows, cols), dtype=int)
+        empty_channel = np.zeros((rows, cols), dtype=int)
+        pacman_channel = np.zeros((rows, cols), dtype=int)
+
+        for r in range(rows):
+            for c in range(cols):
+                tile = self.maze[r][c]
+                if tile == Cell.WALL or tile == Cell.GATE:
+                    wall_channel[r, c] = 1
+                elif tile == Cell.BALL:
+                    ball_channel[r, c] = 1
+                elif tile == Cell.POWERBALL:
+                    powerball_channel[r, c] = 1
+                elif tile == Cell.GHOST:
+                    ghost_channel[r, c] = 1
+                elif tile == Cell.PACMAN:
+                    pacman_channel[r, c] = 1
+                else:
+                    empty_channel[r, c] = 1
+        
+        channels = np.stack([wall_channel, ball_channel, powerball_channel, ghost_channel, empty_channel, pacman_channel])
+        channels = channels.flatten()
+        return channels
+
+    def get_surroundings(self):
+        neighbors = [
+            (-2,-2), (-2,-1), (-2,0), (-2,1), (-2,2),
+            (-1,-2), (-1,-1), (-1,0), (-1,1), (-1,2),
+            (0,-2), (0,-1),           (0,1), (0,2),
+            (1,-2), (1,-1), (1,0),  (1,1), (1,2),
+            (2,-2), (2,-1), (2,0), (2,1), (2,2)
+        ]
+
+        surroundings = []
+        for dr, dc in neighbors:
+            new_row, new_col = self.row + dr, self.col + dc
+            if 0 <= new_row < len(self.maze) and 0 <= new_col < len(self.maze[0]):
+                surroundings.append(self.maze[new_row][new_col].value)
+            else:
+                surroundings.append(-1)
+        return surroundings
+
+        
 
     def read_maze(self, file_path):
         maze = []
@@ -117,6 +168,12 @@ class Agent():
                     else:
                         pygame.draw.rect(self.display, WHITE, rect) 
             pygame.display.flip()
+
+    def get_state(self):
+        surroundings = self.get_surroundings()
+        scalars = np.array([self.row, self.col, self.direction.value])
+        state = np.concatenate((scalars, surroundings))
+        return state
     
     def reset(self):
         self.maze = self.read_maze('map.txt')
@@ -124,9 +181,10 @@ class Agent():
         self.col = 14
         self.lives = 3
         self.direction = Direction.LEFT if random.random() <= 0.5 else Direction.RIGHT
-        left, straight, right = self.cells_around_me(self.direction)
-        state = [self.row, self.col, left, straight, right, self.direction]
-        return state
+        # left, straight, right = self.cells_around_me(self.direction)
+        # channels = self.get_channels()
+        return self.get_state()
+        
 
     def cells_around_me(self, direction):
         if direction == Direction.LEFT:
@@ -196,8 +254,9 @@ class Agent():
             self.col = c
             self.direction = actual
 
-        left, straight, right = self.cells_around_me(self.direction)
-        next_state = [self.row, self.col, left, straight, right, self.direction] 
+        # left, straight, right = self.cells_around_me(self.direction)
+        # channels = self.get_channels()
+        next_state = self.get_state()
         # return next_state, reward, terminated, truncated
         return next_state, reward, terminated, False
 
@@ -227,18 +286,20 @@ class Agent():
         optim.step()
         if global_step % target_update == 0:
             target_network.load_state_dict(q_network.state_dict())
+        return loss
     
-    def train(self):
+    def train(self, visualize=True):
         block_size = 20
         
-        epochs = 500
-        start_training = 200
+        epochs = 100
+        start_training = 50
         batch_size = 32
         learn_frequency = 2
 
         memory = []
         results = []
         num_iters = []
+        losses = []
         global_step = 0
         loop = tqdm(total=epochs, position=0, leave=False)
         for epoch in range(epochs):
@@ -249,31 +310,32 @@ class Agent():
             start_time = time.time()
             self.display.fill(DARK_GRAY)
             epoch_iters = 0
-            while not done and cum_reward < 286 and time.time() - start_time < 1: # there are 278 balls and 8 powerballs
+            while not done and cum_reward < 286 and time.time() - start_time < 3: # there are 278 balls and 8 powerballs
                 epoch_iters += 1
-                for event in pygame.event.get():
-                    if event.type == pygame.QUIT:
-                        pygame.quit()
-                        quit()
-                for row in range(len(self.maze)):
-                    for col in range(len(self.maze[0])):
-                        cell = self.maze[row][col]    
-                        rect = pygame.Rect(col * block_size, row*block_size, block_size, block_size)
-                        if cell == Cell.WALL:
-                            pygame.draw.rect(self.display, DARK_GRAY, rect)
-                        elif cell == Cell.GATE:
-                            pygame.draw.rect(self.display, PURPLE, rect)
-                        elif cell == Cell.BALL:
-                            pygame.draw.rect(self.display, GREEN, rect)
-                        elif cell == Cell.POWERBALL:
-                            pygame.draw.rect(self.display, DARK_GREEN, rect)
-                        elif cell == Cell.PACMAN:
-                            pygame.draw.rect(self.display, YELLOW, rect)
-                        elif cell == Cell.GHOST:
-                            pygame.draw.rect(self.display, DARK_PINK, rect)
-                        else:
-                            pygame.draw.rect(self.display, WHITE, rect) 
-                pygame.display.flip()
+                if visualize:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            pygame.quit()
+                            quit()
+                    for row in range(len(self.maze)):
+                        for col in range(len(self.maze[0])):
+                            cell = self.maze[row][col]    
+                            rect = pygame.Rect(col * block_size, row*block_size, block_size, block_size)
+                            if cell == Cell.WALL:
+                                pygame.draw.rect(self.display, DARK_GRAY, rect)
+                            elif cell == Cell.GATE:
+                                pygame.draw.rect(self.display, PURPLE, rect)
+                            elif cell == Cell.BALL:
+                                pygame.draw.rect(self.display, GREEN, rect)
+                            elif cell == Cell.POWERBALL:
+                                pygame.draw.rect(self.display, DARK_GREEN, rect)
+                            elif cell == Cell.PACMAN:
+                                pygame.draw.rect(self.display, YELLOW, rect)
+                            elif cell == Cell.GHOST:
+                                pygame.draw.rect(self.display, DARK_PINK, rect)
+                            else:
+                                pygame.draw.rect(self.display, WHITE, rect) 
+                    pygame.display.flip()
                 action, self.epsilon = self.get_action(self.network, state, self.epsilon, self.epsilon_decay)
                 next_state, reward, terminated, truncated = self.step(action, self.direction)
                 done = terminated or truncated
@@ -284,23 +346,25 @@ class Agent():
                 state = next_state
                 if global_step > start_training and global_step % learn_frequency == 0:
                     batch = self.prepare_batch(memory, batch_size)
-                    self.learn_dqn(batch, self.optim, self.network, self.target_network, self.gamma, global_step, self.target_update)
+                    loss = self.learn_dqn(batch, self.optim, self.network, self.target_network, self.gamma, global_step, self.target_update)
+                    losses.append(loss)
 
                 results.append(cum_reward)
                 loop.update(1)
                 # print('epoch: ', epoch, 'cum_reward:', cum_reward)
                 loop.set_description('Episodes: {} Reward: {}'.format(epoch, cum_reward))
                 # self.display.fill(GRAY)
-                pygame.display.flip()
+                if visualize:
+                    pygame.display.flip()
             num_iters.append(epoch_iters)
-        return results, num_iters
+        return results, num_iters, losses
         
 a = Agent()
 # a.draw_maze()
-results, iters = a.train()
+results, iters, losses = a.train(False)
 # print(type(results))
 plt.plot(results)
-plt.title("Cumulative Reward vs Time gen 0")
+plt.title("Cumulative Reward vs Time gen 4")
 plt.xlabel('Iteration')
 plt.ylabel('Reward')
 plt.show()
@@ -308,4 +372,12 @@ plt.plot(iters)
 plt.title("Num Iters per Epoch")
 plt.xlabel('epoch')
 plt.ylabel('Iters')
+plt.show()
+
+python_list = [t.detach().tolist() for t in losses]  # Use detach() if needed
+# flat_list = [item for sublist in python_list for item in sublist]
+plt.plot(python_list)
+plt.title("Loss per Epoch")
+plt.xlabel('epoch')
+plt.ylabel('loss')
 plt.show()
