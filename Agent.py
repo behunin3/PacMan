@@ -39,7 +39,7 @@ class Agent():
         self.target_network.load_state_dict(self.network.state_dict())
         self.epsilon = 1
         self.epsilon_decay = .9999
-        self.target_update = 1000
+        self.target_update = 500
         self.gamma = 0.99
         self.lr = 1e-3
         self.optim = torch.optim.Adam(self.network.parameters(), lr=self.lr)
@@ -47,8 +47,7 @@ class Agent():
         # print(os.listdir(os.getcwd()))
         self.maze = self.read_maze('map.txt')
         self.maze[self.row][self.col] = Cell.PACMAN
-        self.display = pygame.display.set_mode((580,400))
-        pygame.display.set_caption("Pacman AI")
+        
         # self.display.fill(GRAY)
         # pygame.display.flip()
         # count = 0
@@ -132,10 +131,10 @@ class Agent():
             with torch.no_grad():
                 q_values = network(state)
             action = torch.argmax(q_values, dim=0).item()
-        if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
-            action = (action + 1) % 3
-        if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
-            action = (action + 1) % 3
+        # if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
+        #     action = (action + 1) % 3
+        # if neighbors[action] == Cell.GATE or neighbors[action] == Cell.WALL:
+        #     action = (action + 1) % 3
         epsilon *= epsilon_decay
         epsilon = max(epsilon, 0.01)
         return action, epsilon
@@ -246,6 +245,8 @@ class Agent():
         if self.maze[r][c] != Cell.GATE and self.maze[r][c] != Cell.WALL:
             if self.maze[r][c] == Cell.GHOST:
                 terminated = True
+            # elif self.maze[r][c] == Cell.BLANK:
+            #     reward -= 1
             elif self.maze[r][c] == Cell.BALL or self.maze[r][c] == Cell.POWERBALL:
                 reward += 1
             self.maze[r][c] = Cell.PACMAN
@@ -276,6 +277,7 @@ class Agent():
         return state, action, next_state, reward, done
     
     def learn_dqn(self, batch, optim, q_network, target_network, gamma, global_step, target_update):
+        clip_value=1.0
         state, action, next_state, reward, done = batch
         part1 = reward + gamma * torch.max(target_network(next_state), dim=1)[0] * (1 - done)
         part2 = q_network(state)[torch.arange(32), action]
@@ -283,16 +285,20 @@ class Agent():
 
         optim.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(q_network.parameters(), clip_value)
         optim.step()
         if global_step % target_update == 0:
             target_network.load_state_dict(q_network.state_dict())
         return loss
     
     def train(self, visualize=True):
+        if visualize:
+            self.display = pygame.display.set_mode((580,400))
+            pygame.display.set_caption("Pacman AI")
         block_size = 20
         
         epochs = 100
-        start_training = 50
+        start_training = 200
         batch_size = 32
         learn_frequency = 2
 
@@ -308,9 +314,10 @@ class Agent():
             done = False
             cum_reward = 0
             start_time = time.time()
-            self.display.fill(DARK_GRAY)
+            if visualize:
+                self.display.fill(DARK_GRAY)
             epoch_iters = 0
-            while not done and cum_reward < 286 and time.time() - start_time < 3: # there are 278 balls and 8 powerballs
+            while not done and cum_reward < 286 and time.time() - start_time < 1: # there are 278 balls and 8 powerballs
                 epoch_iters += 1
                 if visualize:
                     for event in pygame.event.get():
