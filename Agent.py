@@ -47,14 +47,18 @@ class Agent():
         # print(os.listdir(os.getcwd()))
         self.maze = self.read_maze('map.txt')
         self.maze[self.row][self.col] = Cell.PACMAN
+        self.ghosts = [[9,12,Direction.RIGHT, False], [9,16, Direction.LEFT, False], [10,12,Direction.RIGHT, False], [10,16,Direction.LEFT, False]]
+        self.ghost_previous_cells = {}
         
         # self.display.fill(GRAY)
         # pygame.display.flip()
         # count = 0
         # for i in range(len(self.maze)):
         #     for j in range(len(self.maze[0])):
-        #         if self.maze[i][j] == Cell.BALL or self.maze[i][j] == Cell.POWERBALL:
-        #             count += 1
+                # if self.maze[i][j] == Cell.BALL or self.maze[i][j] == Cell.POWERBALL:
+                #     count += 1
+                # if self.maze[i][j] == Cell.GHOST:
+                #     print(i,j)
         # print('count: ', count)
 
     def get_channels(self):
@@ -86,6 +90,12 @@ class Agent():
         channels = np.stack([wall_channel, ball_channel, powerball_channel, ghost_channel, empty_channel, pacman_channel])
         channels = channels.flatten()
         return channels
+    def print_maze(self):
+        for i in range(len(self.maze)):
+            line = ''
+            for j in range(len(self.maze[0])):
+                line += str(self.maze[i][j].value)
+            print(line)
 
     def get_surroundings(self):
         neighbors = [
@@ -116,7 +126,7 @@ class Agent():
         return maze
 
     def get_action(self, network, state, epsilon, epsilon_decay):
-        neighbors = self.cells_around_me(self.direction)
+        neighbors = self.cells_around_me(self.direction, self.row, self.col)
         if random.random() < epsilon:
             action = torch.randint(0,3, (1,)).item()
         else:
@@ -148,10 +158,17 @@ class Agent():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     quit()
+            for row, col, _, _ in self.ghosts:
+                self.maze[row][col] = Cell.GHOST
             for row in range(len(self.maze)):
                 for col in range(len(self.maze[0])):
                     cell = self.maze[row][col]    
                     rect = pygame.Rect(col * block_size, row*block_size, block_size, block_size)
+                    if (row == 9 or row == 10) and 12 <= col <= 16:
+                        if cell != Cell.GHOST:
+                            self.maze[row][col] = Cell.BLANK # erase a moved gate
+                            cell = self.maze[row][col] 
+
                     if cell == Cell.WALL:
                         pygame.draw.rect(self.display, DARK_GRAY, rect)
                     elif cell == Cell.GATE:
@@ -166,6 +183,9 @@ class Agent():
                         pygame.draw.rect(self.display, DARK_PINK, rect)
                     else:
                         pygame.draw.rect(self.display, WHITE, rect) 
+
+            # center should relatively stay the same
+
             pygame.display.flip()
 
     def get_state(self):
@@ -180,25 +200,24 @@ class Agent():
         self.col = 14
         self.lives = 3
         self.direction = Direction.LEFT if random.random() <= 0.5 else Direction.RIGHT
+        self.ghosts = [[9,12,Direction.RIGHT, False], [9,16, Direction.LEFT, False], [10,12,Direction.RIGHT, False], [10,16,Direction.LEFT, False]]
+        self.ghost_previous_cells = {}
         # left, straight, right = self.cells_around_me(self.direction)
         # channels = self.get_channels()
         return self.get_state()
         
 
-    def cells_around_me(self, direction):
+    def cells_around_me(self, direction, r, c):
         if direction == Direction.LEFT:
-            return [self.maze[self.row+1][self.col], self.maze[self.row][self.col-1], self.maze[self.row-1][self.col]] # down, left, up
+            return [self.maze[r+1][c], self.maze[r][c-1], self.maze[r-1][c]] # down, left, up
         elif direction == Direction.UP:
-            return [self.maze[self.row][self.col-1], self.maze[self.row-1][self.col], self.maze[self.row][self.col+1]] # left, up, right
+            return [self.maze[r][c-1], self.maze[r-1][c], self.maze[r][c+1]] # left, up, right
         elif direction == Direction.RIGHT:
-            return [self.maze[self.row-1][self.col], self.maze[self.row][self.col+1], self.maze[self.row+1][self.col]] # up, right, down
+            return [self.maze[r-1][c], self.maze[r][c+1], self.maze[r+1][c]] # up, right, down
         else:
-            return [self.maze[self.row][self.col+1], self.maze[self.row+1][self.col], self.maze[self.row][self.col-1]] # right, down, left
+            return [self.maze[r][c+1], self.maze[r+1][c], self.maze[r][c-1]] # right, down, left
 
-
-    def step(self, action, direction):
-        # actual = Direction.LEFT
-        reward = 0
+    def get_newIndices(self, direction, action, r, c):
         if direction == Direction.LEFT:
             if action == 0:
                 actual = Direction.DOWN
@@ -229,37 +248,117 @@ class Agent():
                 actual = Direction.LEFT
         
         if actual == Direction.LEFT:
-            r = self.row
-            c = self.col - 1
+            r1 = r
+            c1 = c - 1
         elif actual == Direction.UP:
-            r = self.row - 1
-            c = self.col
+            r1 = r - 1
+            c1 = c
         elif actual == Direction.RIGHT:
-            r = self.row
-            c = self.col + 1
+            r1 = r
+            c1 = c + 1
         else:
-            r = self.row + 1
-            c = self.col
+            r1 = r+ 1
+            c1 = c
+        return r1, c1, actual
+
+    def step(self, action, direction):
+        # actual = Direction.LEFT
+        reward = 0
+        r, c, actual = self.get_newIndices(direction, action, self.row, self.col)
 
         terminated = False
-        if self.maze[r][c] != Cell.GATE and self.maze[r][c] != Cell.WALL:
-            if self.maze[r][c] == Cell.GHOST:
+        if self.maze[r][c] == Cell.GHOST:
                 terminated = True
-            # elif self.maze[r][c] == Cell.BLANK:
-            #     reward -= 1
-            elif self.maze[r][c] == Cell.BALL or self.maze[r][c] == Cell.POWERBALL:
+                reward = -100
+                self.lives -= 1
+        if self.maze[r][c] != Cell.GATE and self.maze[r][c] != Cell.WALL:
+            if self.maze[r][c] == Cell.BALL or self.maze[r][c] == Cell.POWERBALL:
                 reward += 1
             self.maze[r][c] = Cell.PACMAN
             self.maze[self.row][self.col] = Cell.BLANK
             self.row = r
             self.col = c
             self.direction = actual
+        # print('moving ghost:' ,self.ghosts[0][0], self.ghosts[0][1], self.ghosts[0][2])
+        self.move_ghosts()
 
         # left, straight, right = self.cells_around_me(self.direction)
         # channels = self.get_channels()
         next_state = self.get_state()
         # return next_state, reward, terminated, truncated
         return next_state, reward, terminated, False
+    
+    def move_ghosts(self):
+        """
+        Moves all ghosts simultaneously while preserving the underlying cell state.
+        """
+        ghost_positions = []  # Temporarily store new positions to avoid overwriting issues
+        new_ghosts = []
+
+        for ghost_id, (r, c, direction, exited) in enumerate(self.ghosts):
+            # Restore the cell at the current ghost position
+            position_key = (r, c)
+            if position_key in self.ghost_previous_cells:
+                self.maze[r][c] = self.ghost_previous_cells[position_key]
+            else:
+                self.maze[r][c] = Cell.BLANK
+
+            if exited:
+                # Random movement once the ghost is out
+                neighbors = self.cells_around_me(direction, r, c)
+                action = torch.randint(0, 3, (1,)).item()
+
+                # Ensure ghost doesn't move into a wall
+                for _ in range(3):  # Try up to 3 directions
+                    if neighbors[action] != Cell.WALL:
+                        break
+                    action = (action + 1) % 3
+
+                # Get new position
+                r1, c1, actual = self.get_newIndices(direction, action, r, c)
+
+                # Save the cell state at the new position
+                new_position_key = (r1, c1)
+                if new_position_key not in ghost_positions:  # Avoid ghost collision
+                    self.ghost_previous_cells[new_position_key] = self.maze[r1][c1]
+                    ghost_positions.append(new_position_key)
+                    new_ghosts.append([r1, c1, actual, True])
+                else:  # Skip this move (retain old position)
+                    new_ghosts.append([r, c, direction, True])
+
+            else:
+                # Systematic movement to leave the room
+                if c < 14:  # Move right towards the gate column
+                    r1, c1 = r, c + 1
+                elif c > 14:  # Move left towards the gate column
+                    r1, c1 = r, c - 1
+                else:  # Move up towards the gate row
+                    if self.maze[r - 1][c] != Cell.WALL:
+                        r1, c1 = r - 1, c
+                        exited = True  # Mark the ghost as exited
+                    else:
+                        r1, c1 = r, c
+
+                position_key = (r1, c1)
+                if position_key not in ghost_positions:  # Avoid ghost collision
+                    ghost_positions.append(position_key)
+                    new_ghosts.append([r1, c1, direction, exited])
+                else:  # Retain old position if blocked
+                    new_ghosts.append([r, c, direction, exited])
+
+        # Update all ghost positions in one go
+        for ghost in new_ghosts:
+            r, c, _, _ = ghost
+            self.maze[r][c] = Cell.GHOST
+
+        # Replace old ghost list with new one
+        self.ghosts = new_ghosts
+
+        # Ensure gate cell is intact
+        if self.maze[8][14] != Cell.GHOST:
+            self.maze[8][14] = Cell.GATE
+
+
 
     def prepare_batch(self, memory, batch_size):
         batches = random.choices(memory, k=batch_size)
@@ -296,11 +395,12 @@ class Agent():
             self.display = pygame.display.set_mode((580,400))
             pygame.display.set_caption("Pacman AI")
         block_size = 20
+        max_reward = 286
         
         epochs = 100
-        start_training = 200
+        start_training = 1000
         batch_size = 32
-        learn_frequency = 2
+        learn_frequency = 50
 
         memory = []
         results = []
@@ -318,6 +418,7 @@ class Agent():
                 self.display.fill(DARK_GRAY)
             epoch_iters = 0
             while not done and cum_reward < 286 and time.time() - start_time < 1: # there are 278 balls and 8 powerballs
+                # self.print_maze()
                 epoch_iters += 1
                 if visualize:
                     for event in pygame.event.get():
@@ -349,6 +450,7 @@ class Agent():
                 memory.append((state, action, next_state, reward, done))
                 # print(reward, cum_reward)
                 cum_reward += reward
+                cum_reward = np.clip(cum_reward / max_reward, -1, 1)
                 global_step += 1
                 state = next_state
                 if global_step > start_training and global_step % learn_frequency == 0:
@@ -357,18 +459,19 @@ class Agent():
                     losses.append(loss)
 
                 results.append(cum_reward)
-                loop.update(1)
+                
                 # print('epoch: ', epoch, 'cum_reward:', cum_reward)
                 loop.set_description('Episodes: {} Reward: {}'.format(epoch, cum_reward))
                 # self.display.fill(GRAY)
                 if visualize:
                     pygame.display.flip()
+            loop.update(1)
             num_iters.append(epoch_iters)
         return results, num_iters, losses
         
 a = Agent()
 # a.draw_maze()
-results, iters, losses = a.train(False)
+results, iters, losses = a.train(True)
 # print(type(results))
 plt.plot(results)
 plt.title("Cumulative Reward vs Time gen 4")
